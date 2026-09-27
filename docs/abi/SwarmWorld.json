@@ -1319,27 +1319,6 @@
   },
   {
     "type": "error",
-    "name": "NotSponsor",
-    "inputs": [
-      {
-        "name": "missionId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "expected",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "actual",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
     "name": "NothingToClaim",
     "inputs": [
       {

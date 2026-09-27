@@ -10,7 +10,7 @@ the network runs before release.
 | Command | Result |
 | --- | --- |
 | `forge build --offline` (solc 0.8.26) | success, lint warnings only (`block-timestamp`, one `unsafe-typecast` on the `uint64` deadline) |
-| `forge test --offline` | 65 passed, 0 failed (52 SwarmWorld incl. 3 fuzz, 9 LaunchToken incl. 1 fuzz, 4 Deploy) |
+| `forge test --offline` | 66 passed, 0 failed (53 SwarmWorld incl. 3 fuzz, 9 LaunchToken incl. 1 fuzz, 4 Deploy) |
 | `forge fmt --check` | clean |
 | `EXPECTED_CHAIN_ID=0 forge script script/Deploy.s.sol:Deploy --offline` | one deployment, script ran successfully |
 | `EXPECTED_CHAIN_ID=1 forge script ...` | reverts `UnexpectedChain(1, 31337)` as intended |
@@ -52,8 +52,24 @@ pins this.
 
 `_live` rejects every builder/tester/reviewer/verifier action once `block.timestamp >= deadline`,
 which is the same instant `expireMission` becomes available. There is no window where both the
-workers and the sponsor can act, so no race on the reward. `test_threeDayExpiryBoundary` checks
+workers and an expirer can act, so no race on the reward. `test_threeDayExpiryBoundary` checks
 `deadline - 1` and `deadline` on both sides.
+
+### F13. Sponsor-only expiry locked a settlement forever — fixed (external finding)
+
+An independent reviewer reported that `expireMission` reverted for every caller except the
+sponsor, and that after the deadline `_live` blocks every role action, so an absent sponsor
+(griefer, lost key, or a contract wallet unable to call) held the settlement's only mission slot
+indefinitely for 1 wei: `openEnergyMission` reverted `SettlementBusy` and `tick()` skipped the
+settlement. Reproduced with a scratch test following the reviewer's steps (open with 1 wei,
+warp one year, stranger cannot open or expire, thirty ticks leave energy at 120 and the slot
+held). Fix: `expireMission` is now permissionless once `block.timestamp >= deadline`; the state
+guard and the refund path are unchanged, so the full reward is still credited to `m.sponsor`
+through pull payment and the caller receives nothing. The `NotSponsor` error was removed as it
+had no remaining use, and the ABI export was regenerated.
+`test_expireIsPermissionlessButRefundsOnlySponsor` and `test_abandonedMissionCannotLockSettlement`
+pin the new behaviour; the latter is the abandoned-mission scenario the reviewer noted the suite
+never exercised.
 
 ### F6. Outcome bounds at settlement — re-checked
 
@@ -106,4 +122,5 @@ which cannot truncate before the year 584 billion). No compiler errors or warnin
 
 ## Disposition
 
-No open defects. F2, F4, F7, F9 and F10 are design decisions recorded in the README.
+No open defects. F2, F4, F7, F9 and F10 are design decisions recorded in the README. F13 was
+reported externally after acceptance, reproduced and fixed in this revision.

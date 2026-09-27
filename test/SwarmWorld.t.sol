@@ -517,15 +517,58 @@ contract SwarmWorldTest is Test {
         _assertState(id, SwarmWorld.MissionState.PASSED);
     }
 
-    function test_expireOnlyBySponsor() public {
+    function test_expireIsPermissionlessButRefundsOnlySponsor() public {
         uint256 id = _open();
         vm.warp(deployedAt + 3 days);
+        // A stranger can expire the mission; the refund is credited to the sponsor, not the caller.
         vm.prank(stranger);
-        vm.expectRevert(abi.encodeWithSelector(SwarmWorld.NotSponsor.selector, id, sponsor, stranger));
+        vm.expectEmit(true, false, false, true);
+        emit SwarmWorld.MissionExpired(id, REWARD);
         world.expireMission(id);
+        _assertState(id, SwarmWorld.MissionState.EXPIRED);
+        assertEq(world.claimable(sponsor), REWARD);
+        assertEq(world.claimable(stranger), 0);
+        assertEq(world.getSettlement(NOVA_PORT).activeMission, 0);
+        _assertConservation();
+
+        // A role holder can do the same on another mission.
+        uint256 t = block.timestamp;
+        uint256 b = _open();
+        vm.warp(t + 3 days);
         vm.prank(builder);
-        vm.expectRevert(abi.encodeWithSelector(SwarmWorld.NotSponsor.selector, id, sponsor, builder));
+        world.expireMission(b);
+        _assertState(b, SwarmWorld.MissionState.EXPIRED);
+        assertEq(world.claimable(sponsor), 2 * REWARD);
+        assertEq(world.claimable(builder), 0);
+        _assertConservation();
+    }
+
+    function test_abandonedMissionCannotLockSettlement() public {
+        // A griefer opens a 1 wei mission and disappears; after the deadline anyone frees the slot.
+        vm.prank(stranger);
+        uint256 id = world.openEnergyMission{value: 1}(NOVA_PORT, _roles());
+        vm.warp(deployedAt + 3 days + 1);
+
+        // While the abandoned mission is still active, the slot is busy and roles cannot act.
+        vm.prank(sponsor);
+        vm.expectRevert(abi.encodeWithSelector(SwarmWorld.SettlementBusy.selector, NOVA_PORT, id));
+        world.openEnergyMission{value: REWARD}(NOVA_PORT, _roles());
+        vm.prank(builder);
+        vm.expectRevert(
+            abi.encodeWithSelector(SwarmWorld.MissionDeadlinePassed.selector, id, uint64(deployedAt + 3 days))
+        );
+        world.submitOutcome(id, 250, 0, bytes32(0));
+
+        // A second sponsor expires it without the griefer's cooperation and opens their own.
+        vm.prank(sponsor);
         world.expireMission(id);
+        assertEq(world.claimable(stranger), 1);
+        assertEq(world.claimable(sponsor), 0);
+        vm.prank(sponsor);
+        uint256 next = world.openEnergyMission{value: REWARD}(NOVA_PORT, _roles());
+        assertEq(next, id + 1);
+        assertEq(world.getSettlement(NOVA_PORT).activeMission, next);
+        _assertConservation();
     }
 
     function test_wrongWorkflowOrder() public {

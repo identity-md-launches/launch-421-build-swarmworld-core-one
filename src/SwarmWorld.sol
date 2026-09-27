@@ -159,7 +159,6 @@ contract SwarmWorld {
     error UnknownMission(uint256 missionId);
     error WrongState(uint256 missionId, MissionState actual, MissionState expected);
     error NotRole(uint256 missionId, address expected, address actual);
-    error NotSponsor(uint256 missionId, address expected, address actual);
     error MissionDeadlinePassed(uint256 missionId, uint64 deadline);
     error MissionNotExpired(uint256 missionId, uint64 deadline);
     error EnergyGainOutOfRange(uint16 energyGain);
@@ -413,11 +412,12 @@ contract SwarmWorld {
         );
     }
 
-    /// @notice Sponsor expires a mission whose lifetime elapsed before it PASSED and reclaims the
-    ///         reward (credited to `claimable`, withdrawn through claim()).
+    /// @notice Permissionless expiry of a mission whose lifetime elapsed before it PASSED. Frees
+    ///         the settlement and credits the full reward to the sponsor (withdrawn through
+    ///         claim()). Anyone may call it so an absent sponsor cannot lock a settlement forever;
+    ///         the refund always goes to the recorded sponsor regardless of the caller.
     function expireMission(uint256 missionId) external {
         Mission storage m = _mission(missionId);
-        if (msg.sender != m.sponsor) revert NotSponsor(missionId, m.sponsor, msg.sender);
         MissionState st = m.state;
         if (st != MissionState.OPEN && st != MissionState.WORKING && st != MissionState.VERIFYING) {
             revert WrongState(missionId, st, MissionState.OPEN);

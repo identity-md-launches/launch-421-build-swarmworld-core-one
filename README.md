@@ -16,7 +16,7 @@ before world state changes. One standalone Foundry project, Solidity 0.8.26.
 | `src/SwarmWorld.sol` | World, missions, rewards |
 | `src/LaunchToken.sol` | Launch ERC-20 (1,000,000,000 SWARM, 18 decimals, minted to deployer) |
 | `script/Deploy.s.sol` | Deploys exactly one SwarmWorld; reads no keys |
-| `test/SwarmWorld.t.sol` | 52 tests including fuzz, every case the brief lists |
+| `test/SwarmWorld.t.sol` | 53 tests including fuzz, every case the brief lists |
 | `test/LaunchToken.t.sol` | Supply, transfer, allowance, no admin entrypoints |
 | `test/Deploy.t.sol` | Calls the deploy function and chain guard directly |
 | `docs/abi/SwarmWorld.json`, `docs/abi/LaunchToken.json` | Exported ABIs |
@@ -66,11 +66,16 @@ States: `OPEN, WORKING, VERIFYING, PASSED, FAILED, SETTLED, EXPIRED`.
 | `submitReview(id, reviewHash, pass)` | reviewer | WORKING (after test pass) | VERIFYING or FAILED | |
 | `verifyOutcome(id, verificationHash, pass)` | verifier | VERIFYING | PASSED or FAILED | |
 | `settleMission(id)` | anyone | PASSED | SETTLED | applies outcome, stores proofHash, credits workers |
-| `expireMission(id)` | sponsor | OPEN, WORKING, VERIFYING | EXPIRED | only at or after `deadline`; refunds sponsor |
+| `expireMission(id)` | anyone | OPEN, WORKING, VERIFYING | EXPIRED | only at or after `deadline`; refunds the sponsor |
 
 Role actions revert with `MissionDeadlinePassed` once `block.timestamp >= deadline`. A PASSED
 mission cannot expire and can be settled at any later time: the work was accepted and the
 settlement's energy is frozen while the mission is active, so the proposal remains valid.
+
+Expiry is permissionless on purpose. After the deadline no role can act, so if only the sponsor
+could expire, a sponsor who disappears (or who opened a 1 wei mission to grief) would hold the
+settlement's single mission slot forever and stop its ticks. Whoever calls `expireMission`, the
+full reward is credited to the recorded sponsor and nothing to the caller.
 
 ### Settlement
 
@@ -155,6 +160,8 @@ no coupling to the world. It has no mint, burn, owner, pause, blocklist, fee or 
 ## Operational responsibilities and assumptions
 
 - Someone must call `tick()` daily. Nothing happens automatically; a missed day is simply lost.
+- Someone must call `expireMission` on missions that pass their deadline without reaching
+  PASSED. Anyone may do so; until it happens the settlement stays busy and its ticks are skipped.
 - The sponsor chooses the four workers and their seat IDs. The contract enforces distinctness,
   not competence or independence. A sponsor can name four addresses they control; the reward
   is then paid to themselves, which harms no one else, but the resulting world-state change is
